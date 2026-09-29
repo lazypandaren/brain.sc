@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+### Changed
+- Single dependency source: `pyproject.toml` only; removed `requirements.txt` / `requirements-runtime.txt`
+- macOS `build-installer.sh` vendors wheels from `[project.dependencies]`
+
 ## 0.3.0
 
 ### Added

@@ -71,8 +71,16 @@ fi
 echo "==> Assembling Brain.app"
 bash "$ROOT/packaging/macos/assemble-app.sh" "$VERSION" "$STAGE/Applications"
 
-echo "==> Vendoring runtime wheels"
-"$BUILD_PY" -m pip download -d "$ROOT/vendor/wheels" -r "$ROOT/requirements-runtime.txt" setuptools wheel >/dev/null
+echo "==> Vendoring runtime wheels (deps from pyproject.toml)"
+# Single source of truth: [project.dependencies] in pyproject.toml (no requirements*.txt)
+"$BUILD_PY" -m pip download -d "$ROOT/vendor/wheels" setuptools wheel \
+  $("$BUILD_PY" -c "
+import re, pathlib
+t = pathlib.Path(r'$ROOT/pyproject.toml').read_text()
+m = re.search(r'dependencies\s*=\s*\[(.*?)\]', t, re.S)
+assert m, 'project.dependencies missing in pyproject.toml'
+print(' '.join(re.findall(r'[\"\\']([^\"\\']+)[\"\\']', m.group(1))))
+") >/dev/null
 for ver in 310 311 312 313 314; do
   "$BUILD_PY" -m pip download -d "$ROOT/vendor/wheels" \
     --only-binary=:all: \
