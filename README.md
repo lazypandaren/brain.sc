@@ -53,6 +53,12 @@ sudo installer -pkg dist/macos/BrainTools-*.pkg -target /
 # or: brain upgrade --pkg /path/to/BrainTools-….pkg
 ```
 
+## What’s new in 0.4.0
+
+- Obsidian-compatible `[[wiki-links]]` + backlinks
+- Daily notes: `brain daily` / UI Daily button / recipe `daily-note`
+- Graph filters: hubs-only, orphans-only
+
 ## What’s new in 0.3.0
 
 - Session wrap prefers **macOS Keychain** (file fallback)

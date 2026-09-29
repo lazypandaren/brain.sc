@@ -32,14 +32,20 @@
   <main>
     <canvas id="graph"></canvas>
     <div class="graph-tools" id="graph-tools">
-      <select id="filter-hub" title="Фільтр по хабу" aria-label="Фільтр по хабу">
-        <option value="">Усі хаби</option>
+      <select id="filter-hub" title="Filter by hub" aria-label="Filter by hub">
+        <option value="">All hubs</option>
       </select>
-      <select id="filter-tag" title="Фільтр по тегу" aria-label="Фільтр по тегу">
-        <option value="">Усі теги</option>
+      <select id="filter-tag" title="Filter by tag" aria-label="Filter by tag">
+        <option value="">All tags</option>
       </select>
+      <select id="filter-mode" title="Graph mode" aria-label="Graph mode">
+        <option value="">All cards</option>
+        <option value="hubs">Hubs only</option>
+        <option value="orphans">Orphans only</option>
+      </select>
+      <button type="button" id="btn-daily" class="ghost" title="Today’s daily note">Daily</button>
       <button type="button" id="btn-fit" class="ghost">Fit</button>
-      <button type="button" id="btn-filter-clear" class="ghost">Скинути</button>
+      <button type="button" id="btn-filter-clear" class="ghost">Reset</button>
     </div>
     <div class="graph-legend" aria-hidden="true">
       <span><i class="lg-fresh"></i> нові / оновлені &lt;24г</span>
@@ -54,14 +60,18 @@
       <p id="panel-tldr"></p>
       <div id="panel-tags" class="tags"></div>
       <div class="panel-section">
-        <h3>Звʼязки</h3>
+        <h3>Links</h3>
         <ul id="panel-links" class="panel-links"></ul>
         <div class="link-add-row">
-          <input id="link-target" type="text" list="link-suggestions" placeholder="slug або назва…" autocomplete="off" />
+          <input id="link-target" type="text" list="link-suggestions" placeholder="slug or title…" autocomplete="off" />
           <datalist id="link-suggestions"></datalist>
-          <button type="button" id="link-add-btn">Звʼязати</button>
+          <button type="button" id="link-add-btn">Link</button>
         </div>
         <p id="link-err" class="err"></p>
+      </div>
+      <div class="panel-section">
+        <h3>Backlinks</h3>
+        <ul id="panel-backlinks" class="panel-links"></ul>
       </div>
       <pre id="panel-body" class="body"></pre>
     </aside>

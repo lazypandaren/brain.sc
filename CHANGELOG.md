@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0
+
+### Added
+- Obsidian-compatible `[[wiki-links]]` (merged into card `links` on parse; written on `brain link` / API link)
+- Backlinks in `brain get` and `GET /api/card/…`
+- Daily notes: `brain daily`, `POST /api/daily`, recipe `daily-note`
+- Graph filters: hubs-only / orphans-only; Daily button in UI
+
+### Changed
+- Graph nodes include `orphan` (no inbound and no outbound links)
+
 ## 0.3.1
 
 ### Changed

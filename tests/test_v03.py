@@ -26,10 +26,13 @@ def cfgdir(tmp_path, monkeypatch):
     lock()
 
 
-def test_version_is_0_3():
+def test_version_is_semver_040_line():
     from brain import __version__
 
-    assert __version__.startswith("0.3")
+    # 0.3.x tests remain; package may be newer — accept 0.3+ for this module's dep checks
+    parts = __version__.split(".")
+    assert int(parts[0]) == 0
+    assert int(parts[1]) >= 3
 
 
 def test_deps_only_in_pyproject():

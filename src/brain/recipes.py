@@ -138,6 +138,11 @@ def run_recipe(root: Path, recipe_id: str) -> dict[str, Any]:
         elif "brain doctor" in key or key == "doctor":
             _do_doctor(root, log)
             ran_doctor = True
+        elif "brain daily" in key or key.startswith("daily"):
+            from brain.daily import ensure_daily
+
+            card = ensure_daily(root)
+            log.append(f"ok: daily={card.id}")
         else:
             log.append(f"manual: {step}")
 
@@ -216,6 +221,22 @@ verify: ""
 2. Open at most 3 cards via `brain get` (TL;DR only).
 3. Answer. Do not load Details unless TL;DR insufficient.
 4. Never touch `_raw/` or `secure/*.enc`.
+""",
+    "daily-note.md": """---
+id: daily-note
+title: Daily note (Obsidian-style)
+trigger: manual
+scope: vault-only
+max_cards: 1
+verify: ""
+---
+# Instructions
+
+1. `brain daily` — open or create today's `daily-YYYY-MM-DD` card.
+2. Capture scratch in Details (Focus / Done / Remember).
+3. Promote durable facts with `brain add` or `[[wiki-links]]` to real cards.
+4. Optional: `brain remember` one line from the day.
+5. brain reindex
 """,
 }
 

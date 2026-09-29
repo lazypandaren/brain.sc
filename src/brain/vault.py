@@ -107,6 +107,8 @@ def init_vault(path: str | Path, *, master_password: str | None = None) -> Path:
             "Search → open 1–3 cards → update active. Path via CLI or UI Settings.\n\n"
             "## Details\n"
             "Use `brain search`, `brain get`, `brain add`. Secure cards need `brain unlock`.\n"
+            "Obsidian-compatible links work in bodies: [[elseveir-bridge]].\n"
+            "Daily scratch: `brain daily`.\n"
         ),
     )
     bridge = Card(
