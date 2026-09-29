@@ -14,6 +14,7 @@ from brain.crypto import decrypt, encrypt
 from brain.errors import LockedError, NotFoundError, VaultError
 from brain.paths import atomic_write_bytes, atomic_write_text, safe_join, validate_slug
 from brain.session import get_session_key, is_unlocked
+from brain.wikilinks import extract_wikilink_slugs, ensure_wikilink, merge_link_lists
 
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n(.*)$", re.DOTALL)
 
@@ -55,15 +56,26 @@ def parse_card(text: str, *, path: Path | None = None, secure: bool = False) -> 
     if not isinstance(meta, dict):
         raise VaultError("Invalid frontmatter")
     cid = validate_slug(str(meta.get("id") or (path.stem if path else "")))
+    fm_links = []
+    for x in meta.get("links") or []:
+        try:
+            fm_links.append(validate_slug(str(x)))
+        except Exception:
+            continue
+    body = m.group(2).lstrip("\n")
+    wiki = extract_wikilink_slugs(body)
+    links = merge_link_lists(fm_links, wiki)
+    # Never self-link
+    links = [x for x in links if x != cid]
     return Card(
         id=cid,
         title=str(meta.get("title") or cid),
         tags=[str(t) for t in (meta.get("tags") or [])],
         projects=[str(p) for p in (meta.get("projects") or [])],
-        links=[validate_slug(str(x)) for x in (meta.get("links") or [])],
+        links=links,
         secure=bool(meta.get("secure", secure)),
         updated=str(meta.get("updated") or ""),
-        body=m.group(2).lstrip("\n"),
+        body=body,
         path=path,
     )
 
@@ -208,6 +220,8 @@ def add_link(root: Path, a: str, b: str) -> None:
         ca.links.append(b)
     if a not in cb.links:
         cb.links.append(a)
+    ca.body = ensure_wikilink(ca.body, b)
+    cb.body = ensure_wikilink(cb.body, a)
     write_card(root, ca)
     write_card(root, cb)
     try:

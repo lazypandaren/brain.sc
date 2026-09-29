@@ -126,6 +126,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_topics.add_argument("--tag", default="elseveir-topic")
 
+    p_daily = sub.add_parser("daily", help="Open or create today's daily note card")
+    p_daily.add_argument(
+        "--date",
+        dest="day",
+        default=None,
+        help="ISO date YYYY-MM-DD (default: today)",
+    )
+
     sub.add_parser("stats", help="Token-economy and vault health stats")
     args = parser.parse_args(argv)
     try:
@@ -210,6 +218,13 @@ def dispatch(args: argparse.Namespace) -> int:
         card = read_card(root, args.slug)
         print(f"# {card.title} ({card.id})")
         print(card.tldr if not args.full else card.body)
+        if card.links:
+            print("links: " + ", ".join(card.links))
+        from brain.daily import backlinks
+
+        bl = backlinks(root, card.id)
+        if bl:
+            print("backlinks: " + ", ".join(b["id"] for b in bl))
         return 0
 
     if cmd == "add":
@@ -395,6 +410,20 @@ def dispatch(args: argparse.Namespace) -> int:
             print(f"skipped {len(result['skipped'])}")
             for s in result["skipped"]:
                 print(f"skipped: {s}")
+        return 0
+
+    if cmd == "daily":
+        from datetime import date as date_cls
+
+        from brain.daily import ensure_daily
+        from brain.recipes import seed_automations
+
+        root = _root(args)
+        seed_automations(root)
+        day = date_cls.fromisoformat(args.day) if getattr(args, "day", None) else None
+        card = ensure_daily(root, day)
+        print(f"daily={card.id}")
+        print(card.tldr)
         return 0
 
     if cmd == "stats":

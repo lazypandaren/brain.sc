@@ -26,18 +26,23 @@ def graph_payload(root: Path) -> dict[str, Any]:
     cards = load_index(root)
     # Undirected degree (outbound + inbound) for hub highlighting
     degree_map: dict[str, int] = {}
+    inbound: dict[str, int] = {}
     for c in cards:
         cid = c["id"]
         degree_map.setdefault(cid, 0)
+        inbound.setdefault(cid, 0)
         for link in c.get("links") or []:
             degree_map[cid] = degree_map.get(cid, 0) + 1
             degree_map[link] = degree_map.get(link, 0) + 1
+            inbound[link] = inbound.get(link, 0) + 1
 
     nodes = []
     edges = []
     seen = set()
     for c in cards:
         degree = degree_map.get(c["id"], 0)
+        out_n = len(c.get("links") or [])
+        in_n = inbound.get(c["id"], 0)
         nodes.append(
             {
                 "id": c["id"],
@@ -48,6 +53,7 @@ def graph_payload(root: Path) -> dict[str, Any]:
                 "updated": c.get("updated") or "",
                 "hub": degree >= 3,
                 "degree": degree,
+                "orphan": out_n == 0 and in_n == 0,
             }
         )
         for link in c.get("links") or []:
@@ -204,6 +210,7 @@ class BrainHandler(BaseHTTPRequestHandler):
             if path.startswith("/api/card/"):
                 slug = urllib.parse.unquote(path[len("/api/card/") :])
                 card = read_card(self.root, slug)
+                from brain.daily import backlinks
                 from brain.stats import cheap_full_tokens, estimate_tokens, log_usage
 
                 log_usage(
@@ -219,6 +226,7 @@ class BrainHandler(BaseHTTPRequestHandler):
                         "title": card.title,
                         "tags": card.tags,
                         "links": card.links,
+                        "backlinks": backlinks(self.root, card.id),
                         "tldr": card.tldr,
                         "body": card.body,
                         "secure": card.secure,
@@ -474,6 +482,27 @@ class BrainHandler(BaseHTTPRequestHandler):
                 )
                 rebuild_index(self.root)
                 self._json(200, {"ok": True, "id": slug})
+                return
+            if path == "/api/daily":
+                if not is_vault(self.root):
+                    self._json(400, {"error": "Vault root not set. Use Settings."})
+                    return
+                from datetime import date as date_cls
+
+                from brain.daily import ensure_daily
+
+                raw = str(body.get("date") or "").strip()
+                day = date_cls.fromisoformat(raw) if raw else None
+                card = ensure_daily(self.root, day)
+                self._json(
+                    200,
+                    {
+                        "ok": True,
+                        "id": card.id,
+                        "title": card.title,
+                        "tldr": card.tldr,
+                    },
+                )
                 return
             if path == "/api/link":
                 if not is_vault(self.root):

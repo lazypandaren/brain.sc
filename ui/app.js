@@ -19,7 +19,7 @@
   let dragging = null;
   let panning = null; // { lx, ly } last screen coords while panning the map
   let transform = { x: 0, y: 0, k: 1 };
-  let filterFocus = null; // null | { type: "hub"|"tag", id: string }
+  let filterFocus = null; // null | { type: "hub"|"tag"|"mode", id: string }
   let panelCard = null; // last opened card payload
   let linkSuggestions = []; // [{id,title}]
   let physicsLeft = 0;
@@ -241,6 +241,11 @@
     if (filterFocus.type === "tag") {
       return (n.tags || []).includes(filterFocus.id);
     }
+    if (filterFocus.type === "mode") {
+      if (filterFocus.id === "hubs") return !!n.hub;
+      if (filterFocus.id === "orphans") return !!n.orphan;
+    }
+    return true;
     return true;
   }
 
@@ -631,7 +636,7 @@
     if (!list) return;
     const links = card.links || [];
     if (!links.length) {
-      list.innerHTML = '<li class="empty">Немає звʼязків — додай хаб/картку нижче</li>';
+      list.innerHTML = '<li class="empty">No outbound links — add below or use [[wiki-links]] in the body</li>';
       return;
     }
     list.innerHTML = links.map((id) => {
@@ -639,7 +644,7 @@
       const label = n ? n.title : id;
       return `<li>
         <button type="button" class="link-open" data-id="${escapeHtml(id)}">${escapeHtml(label)}</button>
-        <button type="button" class="link-unlink" data-id="${escapeHtml(id)}" title="Відʼєднати">×</button>
+        <button type="button" class="link-unlink" data-id="${escapeHtml(id)}" title="Unlink">×</button>
       </li>`;
     }).join("");
     list.querySelectorAll(".link-open").forEach((btn) => {
@@ -660,6 +665,24 @@
           if (err) err.textContent = e.message;
         }
       };
+    });
+  }
+
+  function renderPanelBacklinks(card) {
+    const list = document.getElementById("panel-backlinks");
+    if (!list) return;
+    const bl = card.backlinks || [];
+    if (!bl.length) {
+      list.innerHTML = '<li class="empty">No backlinks yet</li>';
+      return;
+    }
+    list.innerHTML = bl.map((b) => {
+      const id = b.id || b;
+      const label = b.title || id;
+      return `<li><button type="button" class="link-open" data-id="${escapeHtml(id)}">${escapeHtml(label)}</button></li>`;
+    }).join("");
+    list.querySelectorAll(".link-open").forEach((btn) => {
+      btn.onclick = () => openCard(btn.getAttribute("data-id"));
     });
   }
 
@@ -687,6 +710,7 @@
         };
       });
       renderPanelLinks(card);
+      renderPanelBacklinks(card);
       panelBody.textContent = card.body || "";
       focusNode(id);
     } catch (e) {
@@ -698,6 +722,8 @@
       panelTags.innerHTML = "";
       const list = document.getElementById("panel-links");
       if (list) list.innerHTML = "";
+      const bl = document.getElementById("panel-backlinks");
+      if (bl) bl.innerHTML = "";
       panelBody.textContent = "";
     }
   }
@@ -775,6 +801,7 @@
   document.getElementById("filter-hub").onchange = (ev) => {
     const v = ev.target.value;
     document.getElementById("filter-tag").value = "";
+    document.getElementById("filter-mode").value = "";
     if (!v) {
       filterFocus = null;
       return;
@@ -784,11 +811,24 @@
   document.getElementById("filter-tag").onchange = (ev) => {
     const v = ev.target.value;
     document.getElementById("filter-hub").value = "";
+    document.getElementById("filter-mode").value = "";
     if (!v) {
       filterFocus = null;
       return;
     }
     filterFocus = { type: "tag", id: v };
+    fitNodes(nodes.filter((n) => nodeInFocus(n)));
+  };
+  document.getElementById("filter-mode").onchange = (ev) => {
+    const v = ev.target.value;
+    document.getElementById("filter-hub").value = "";
+    document.getElementById("filter-tag").value = "";
+    if (!v) {
+      filterFocus = null;
+      fitNodes(nodes);
+      return;
+    }
+    filterFocus = { type: "mode", id: v };
     fitNodes(nodes.filter((n) => nodeInFocus(n)));
   };
   document.getElementById("btn-fit").onclick = () => {
@@ -799,7 +839,21 @@
     filterFocus = null;
     document.getElementById("filter-hub").value = "";
     document.getElementById("filter-tag").value = "";
+    document.getElementById("filter-mode").value = "";
     fitNodes(nodes);
+  };
+  document.getElementById("btn-daily").onclick = async () => {
+    try {
+      const data = await api("/api/daily", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      await reload({ keepPositions: true });
+      await openCard(data.id);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   function updateUnlockBtn() {
