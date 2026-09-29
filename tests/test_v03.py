@@ -32,6 +32,16 @@ def test_version_is_0_3():
     assert __version__.startswith("0.3")
 
 
+def test_deps_only_in_pyproject():
+    root = Path(__file__).resolve().parents[1]
+    assert (root / "pyproject.toml").is_file()
+    assert not (root / "requirements.txt").exists()
+    assert not (root / "requirements-runtime.txt").exists()
+    text = (root / "pyproject.toml").read_text(encoding="utf-8")
+    assert "cryptography" in text
+    assert "pywebview" in text
+
+
 def test_slugify_topics():
     assert slugify("Hello World") == "hello-world"
     assert "win" in slugify("SCMO-Win2022")

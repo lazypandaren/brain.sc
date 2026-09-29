@@ -15,9 +15,11 @@ Repository docs, commit messages, PR descriptions, and issue text are **English*
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -U pip setuptools wheel
-pip install pytest cryptography argon2-cffi PyYAML
-PYTHONPATH=src pytest -q
+pip install -e ".[dev]"
+pytest -q
 ```
+
+Dependencies live only in `pyproject.toml` (`[project.dependencies]` + `[project.optional-dependencies]`). Do not add `requirements.txt`.
 
 ## Scope
 

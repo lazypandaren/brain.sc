@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "brain-tools"
-version = "0.3.0"
+version = "0.3.1"
 description = "Cross-project knowledge brain: vault, CLI, neural UI, secure cards"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -9,6 +9,8 @@ End users should get a double-clickable **Brain.app** plus a `brain` CLI without
 - macOS with Xcode CLT (for packaging scripts)
 - Network once to fetch Python deps into the staging tree (see `scripts/macos/build-installer.sh`)
 
+**Dependency source of truth:** `pyproject.toml` only. The installer vendors wheels from `[project.dependencies]` — there is no separate `requirements*.txt`.
+
 ## Build
 
 From the repo root:

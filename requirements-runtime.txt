@@ -1,4 +1,0 @@
-cryptography>=42
-argon2-cffi>=23
-PyYAML>=6
-pywebview>=5
