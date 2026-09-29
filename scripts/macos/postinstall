@@ -1,0 +1,165 @@
+#!/bin/bash
+# postinstall — self-contained: bundled CPython + vendored wheels (offline-first)
+set -euo pipefail
+
+PREFIX="/usr/local/lib/brain-tools"
+BIN="/usr/local/bin/brain"
+LOG="/tmp/braintools-install.log"
+export HOME="/var/root"
+export PIP_CACHE_DIR="/tmp/braintools-pip-cache"
+mkdir -p "$PIP_CACHE_DIR"
+
+exec > >(tee -a "$LOG") 2>&1
+echo "BrainTools postinstall $(date)"
+
+# Stop any old running backend/app so the fresh code is actually used
+pkill -f "/usr/local/lib/brain-tools/.venv" 2>/dev/null || true
+pkill -f "Brain.app/Contents/MacOS/Brain" 2>/dev/null || true
+sleep 1
+
+pick_python() {
+  local c ver major minor
+  # 1) Bundled standalone CPython (preferred — no system Python required)
+  for c in \
+    "$PREFIX/runtime/python/bin/python3" \
+    "$PREFIX/runtime/python/bin/python3.12"
+  do
+    if [[ -x "$c" ]]; then
+      echo "$c"
+      return 0
+    fi
+  done
+
+  # 2) System / Homebrew / python.org — prefer versions matching vendored wheels
+  for c in \
+    /usr/local/bin/python3.12 \
+    /Library/Frameworks/Python.framework/Versions/3.12/bin/python3 \
+    /opt/homebrew/bin/python3.12 \
+    /usr/local/bin/python3 \
+    /opt/homebrew/bin/python3.11 \
+    /opt/homebrew/bin/python3.13 \
+    /opt/homebrew/bin/python3.10 \
+    /opt/homebrew/bin/python3 \
+    /usr/bin/python3
+  do
+    [[ -x "$c" ]] || continue
+    ver="$("$c" -c 'import sys; print("%d.%d"%sys.version_info[:2])' 2>/dev/null || true)"
+    [[ -n "$ver" ]] || continue
+    major="${ver%%.*}"
+    minor="${ver#*.}"
+    if [[ "$major" -gt 3 ]] || { [[ "$major" -eq 3 ]] && [[ "$minor" -ge 10 ]]; }; then
+      if compgen -G "$PREFIX/vendor/wheels/pyyaml-*-cp${major}${minor}-*.whl" > /dev/null \
+         || compgen -G "$PREFIX/vendor/wheels/PyYAML-*-cp${major}${minor}-*.whl" > /dev/null; then
+        echo "$c"
+        return 0
+      fi
+    fi
+  done
+
+  for c in /usr/local/bin/python3 /opt/homebrew/bin/python3 /usr/bin/python3; do
+    if [[ -x "$c" ]] && "$c" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,10) else 1)' 2>/dev/null; then
+      echo "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
+PYTHON="$(pick_python || true)"
+if [[ -z "${PYTHON}" ]]; then
+  echo "ERROR: No usable Python found." >&2
+  echo "Expected bundled runtime at $PREFIX/runtime/python/bin/python3" >&2
+  echo "Or install Python 3.12+ from https://www.python.org" >&2
+  ls -la "$PREFIX/runtime" 2>/dev/null || echo "(no runtime dir)" >&2
+  exit 1
+fi
+
+# Always create venv as native arm64 on Apple Silicon (Installer can be weird under translation)
+PY_RUN=("$PYTHON")
+if /usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null | grep -q 1; then
+  PY_RUN=(/usr/bin/arch -arm64 "$PYTHON")
+fi
+echo "Using PYTHON=${PY_RUN[*]} ($("${PY_RUN[@]}" -V 2>&1))"
+
+cd "$PREFIX"
+rm -rf .venv
+"${PY_RUN[@]}" -m venv .venv
+# shellcheck disable=SC1091
+source .venv/bin/activate
+VENV_PY=("$PREFIX/.venv/bin/python")
+if /usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null | grep -q 1; then
+  VENV_PY=(/usr/bin/arch -arm64 "$PREFIX/.venv/bin/python")
+fi
+"${VENV_PY[@]}" -m pip install --upgrade pip wheel -q
+
+WHEELS="$PREFIX/vendor/wheels"
+install_ok=0
+if [[ -d "$WHEELS" ]]; then
+  if "${VENV_PY[@]}" -m pip install --no-index --find-links="$WHEELS" "brain-tools" -q; then
+    install_ok=1
+    echo "Installed brain-tools from vendored wheels (offline)"
+  else
+    echo "WARN: offline wheel install failed; trying editable + online deps"
+  fi
+fi
+
+if [[ "$install_ok" -eq 0 ]]; then
+  if "${VENV_PY[@]}" -m pip install -e . -q; then
+    install_ok=1
+    echo "Installed brain-tools editable (online ok)"
+  else
+    echo "ERROR: pip install failed. See $LOG" >&2
+    exit 1
+  fi
+fi
+
+# Verify native import
+if /usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null | grep -q 1; then
+  if ! /usr/bin/arch -arm64 "$PREFIX/.venv/bin/brain" --version >/dev/null 2>&1; then
+    echo "ERROR: brain import failed under arm64 after install" >&2
+    /usr/bin/arch -arm64 "$PREFIX/.venv/bin/brain" --version || true
+    exit 1
+  fi
+fi
+
+mkdir -p /usr/local/bin
+cat > "$BIN" <<'EOF'
+#!/bin/bash
+export BRAIN_TOOLS_HOME="/usr/local/lib/brain-tools"
+if /usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null | grep -q 1; then
+  exec /usr/bin/arch -arm64 "/usr/local/lib/brain-tools/.venv/bin/brain" "$@"
+fi
+exec "/usr/local/lib/brain-tools/.venv/bin/brain" "$@"
+EOF
+chmod 755 "$BIN"
+
+"$BIN" --version
+echo "OK: brain → $BIN"
+
+# Ensure Applications app exists (prefer staged copy under PREFIX, else keep pkg-installed one)
+APP_DST="/Applications/Brain.app"
+APP_SRC=""
+if [[ -d "$PREFIX/Brain.app" ]]; then
+  APP_SRC="$PREFIX/Brain.app"
+elif [[ -d "$APP_DST" ]]; then
+  APP_SRC="$APP_DST"
+fi
+if [[ -n "$APP_SRC" ]]; then
+  if [[ "$APP_SRC" != "$APP_DST" ]]; then
+    rm -rf "$APP_DST"
+    cp -R "$APP_SRC" "$APP_DST"
+  fi
+  chmod 755 "$APP_DST/Contents/MacOS/Brain"
+  xattr -dr com.apple.quarantine "$APP_DST" 2>/dev/null || true
+  /usr/libexec/PlistBuddy -c "Delete :LSRequiresNativeExecution" "$APP_DST/Contents/Info.plist" 2>/dev/null || true
+  /usr/libexec/PlistBuddy -c "Add :LSRequiresNativeExecution bool true" "$APP_DST/Contents/Info.plist" 2>/dev/null || true
+  echo "OK: app → $APP_DST"
+else
+  echo "WARN: Brain.app missing"
+fi
+
+echo "Upgrade path: re-run this .pkg or: brain upgrade --pkg <file>"
+echo "Autostart UI (optional): brain autostart on"
+echo "Refresh agent snippets: brain agents install"
+
+exit 0

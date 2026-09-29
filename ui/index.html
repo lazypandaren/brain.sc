@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Brain</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="atmosphere" aria-hidden="true"></div>
+  <header class="top">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <h1>Brain</h1>
+    </div>
+    <div class="search-wrap">
+      <input id="search" type="search" placeholder="Швидкий пошу…" autocomplete="off" />
+      <kbd>/</kbd>
+    </div>
+    <div class="actions">
+      <button type="button" id="btn-about" class="ghost">?</button>
+      <button type="button" id="btn-feedback" class="ghost">Feedback</button>
+      <button type="button" id="btn-dashboard" class="ghost">Dashboard</button>
+      <button type="button" id="btn-unlock" class="ghost">Unlock</button>
+      <button type="button" id="btn-settings" class="ghost">Settings</button>
+    </div>
+  </header>
+
+  <main>
+    <canvas id="graph"></canvas>
+    <div class="graph-tools" id="graph-tools">
+      <select id="filter-hub" title="Фільтр по хабу" aria-label="Фільтр по хабу">
+        <option value="">Усі хаби</option>
+      </select>
+      <select id="filter-tag" title="Фільтр по тегу" aria-label="Фільтр по тегу">
+        <option value="">Усі теги</option>
+      </select>
+      <button type="button" id="btn-fit" class="ghost">Fit</button>
+      <button type="button" id="btn-filter-clear" class="ghost">Скинути</button>
+    </div>
+    <div class="graph-legend" aria-hidden="true">
+      <span><i class="lg-fresh"></i> нові / оновлені &lt;24г</span>
+      <span><i class="lg-hub"></i> хаб (рожевий)</span>
+      <span><i class="lg-idle"></i> звичайні</span>
+      <span class="lg-hint">dblclick хаб = фокус кластера · Fit · link у панелі</span>
+    </div>
+    <aside id="panel" class="panel hidden" aria-live="polite">
+      <button type="button" id="panel-close" class="icon-close" aria-label="Close">×</button>
+      <p class="eyebrow" id="panel-meta"></p>
+      <h2 id="panel-title"></h2>
+      <p id="panel-tldr"></p>
+      <div id="panel-tags" class="tags"></div>
+      <div class="panel-section">
+        <h3>Звʼязки</h3>
+        <ul id="panel-links" class="panel-links"></ul>
+        <div class="link-add-row">
+          <input id="link-target" type="text" list="link-suggestions" placeholder="slug або назва…" autocomplete="off" />
+          <datalist id="link-suggestions"></datalist>
+          <button type="button" id="link-add-btn">Звʼязати</button>
+        </div>
+        <p id="link-err" class="err"></p>
+      </div>
+      <pre id="panel-body" class="body"></pre>
+    </aside>
+  </main>
+
+  <div id="modal-unlock" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <h2 id="unlock-title">Unlock secure</h2>
+      <p id="unlock-note">Мастер-пароль лишається локально. Агент його не бачить.</p>
+      <input id="unlock-pass" type="password" placeholder="Master password" />
+      <input id="unlock-pass2" type="password" placeholder="Повтори пароль" class="hidden" />
+      <div class="row">
+        <button type="button" id="unlock-cancel" class="ghost">Cancel</button>
+        <button type="button" id="unlock-ok">Unlock</button>
+      </div>
+      <p id="unlock-err" class="err"></p>
+    </div>
+  </div>
+
+  <div id="modal-settings" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card fb-card">
+      <h2>Settings</h2>
+      <label for="root-path">Папка Google Drive (vault)</label>
+      <input id="root-path" type="text" placeholder="/absolute/path/to/GoogleDrive/Brain" />
+      <p id="root-status" class="hint">Якщо vault немає — ініціалізуємо автоматично.</p>
+
+      <div class="fb-grid">
+        <label>Карток на запит агента (1–10)
+          <input id="cfg-maxcards" type="number" min="1" max="10" />
+        </label>
+        <label>Деталізація за замовчуванням
+          <select id="cfg-detail">
+            <option value="tldr">TL;DR (економія токенів)</option>
+            <option value="full">Повний текст</option>
+          </select>
+        </label>
+        <label>Сесія unlock, хвилин (5–480)
+          <input id="cfg-ttl" type="number" min="5" max="480" />
+        </label>
+        <label>Порт UI (потрібен перезапуск)
+          <input id="cfg-port" type="number" min="1024" max="65535" />
+        </label>
+      </div>
+
+      <hr class="divider" />
+      <label>Обслуговування</label>
+      <div class="agents-row">
+        <button type="button" class="ghost" id="btn-reindex">Переіндексувати</button>
+        <button type="button" class="ghost" id="btn-doctor">Doctor</button>
+        <button type="button" class="ghost" id="btn-reveal">Vault у Finder</button>
+      </div>
+      <pre id="doctor-out" class="doctor-out hidden"></pre>
+      <hr class="divider" />
+      <label for="import-path">Import folder of .md files</label>
+      <input id="import-path" type="text" placeholder="/absolute/path/to/notes" />
+      <div class="row">
+        <button type="button" id="import-run">Import folder</button>
+      </div>
+      <label for="import-topics-path">Import topic summaries (e.g. elseveir docs/topics)</label>
+      <input id="import-topics-path" type="text" placeholder="/absolute/path/to/docs/topics" />
+      <div class="row">
+        <button type="button" id="import-topics-run">Import topics</button>
+      </div>
+      <hr class="divider" />
+      <label>Підключити AI-агентів (щоб вони користувались Brain)</label>
+      <div class="agents-row">
+        <button type="button" class="ghost agent-btn" data-target="cursor">Cursor</button>
+        <button type="button" class="ghost agent-btn" data-target="codex">Codex</button>
+        <button type="button" class="ghost agent-btn" data-target="claude">Claude</button>
+        <button type="button" id="agents-all">Всі одразу</button>
+      </div>
+      <p id="settings-err" class="err"></p>
+      <div class="row sticky-actions">
+        <button type="button" id="settings-cancel" class="ghost">Cancel</button>
+        <button type="button" id="settings-save">Зберегти</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="dashboard" class="dash hidden" aria-live="polite">
+    <div class="dash-inner">
+      <div class="dash-head">
+        <h2>Dashboard</h2>
+        <div class="dash-head-actions">
+          <button type="button" id="dash-reset" class="ghost">Обнулити статистику</button>
+          <button type="button" id="dash-close" class="icon-close" aria-label="Close">×</button>
+        </div>
+      </div>
+      <div class="dash-grid">
+        <section class="dash-card wide">
+          <h3>Активність записів</h3>
+          <div class="kpis" id="dash-kpis"></div>
+          <canvas id="dash-chart" height="160"></canvas>
+          <p class="hint">Стовпчики — записи за день (add / link / remember / active). Оновлюється при кожному записі в vault.</p>
+        </section>
+        <section class="dash-card">
+          <h3>Здоровʼя vault</h3>
+          <ul class="dash-list" id="dash-health"></ul>
+        </section>
+        <section class="dash-card">
+          <h3>Топ тегів</h3>
+          <ul class="dash-list" id="dash-tags"></ul>
+        </section>
+        <section class="dash-card wide">
+          <h3>Останні записи</h3>
+          <ul class="dash-list" id="dash-recent"></ul>
+        </section>
+        <section class="dash-card wide">
+          <h3>Write back now</h3>
+          <label for="wb-remember">Remember (one short line)</label>
+          <input id="wb-remember" type="text" maxlength="240" placeholder="What to keep between sessions" />
+          <div class="row">
+            <button type="button" id="wb-remember-btn">Remember</button>
+          </div>
+          <label for="wb-slug">New card slug (optional)</label>
+          <input id="wb-slug" type="text" placeholder="my-note-slug" />
+          <label for="wb-title">Title</label>
+          <input id="wb-title" type="text" placeholder="Short title" />
+          <label for="wb-tldr">TL;DR</label>
+          <textarea id="wb-tldr" rows="3" placeholder="≤5 lines"></textarea>
+          <div class="row">
+            <button type="button" id="wb-add-btn">Add card</button>
+          </div>
+          <p id="wb-msg" class="hint"></p>
+        </section>
+        <section class="dash-card wide">
+          <h3>Memory (remember)</h3>
+          <ul class="dash-list" id="dash-memory"></ul>
+        </section>
+        <section class="dash-card wide">
+          <h3>Економія токенів (довідково)</h3>
+          <ul class="dash-list" id="dash-tokens"></ul>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-about" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card fb-card">
+      <h2>Навіщо Brain</h2>
+      <div class="about-text">
+        <p><b>Проблема.</b> Знання розкидані: чати з AI забуваються, нотатки губляться по проєктах,
+        а щоб AI-агент щось «згадав», йому треба перечитувати гори файлів — це повільно і дорого
+        (токени = гроші).</p>
+        <p><b>Рішення.</b> Brain — твоя особиста картотека знань у звичайних Markdown-файлах:</p>
+        <ul>
+          <li><b>Одне місце для всього.</b> Картки «як зробити X», рішення, контакти, секрети —
+          синхронізуються через Google Drive на всі пристрої.</li>
+          <li><b>AI читає дешево.</b> Агент (Cursor / Codex / Claude) не сканує все — він дивиться
+          в компактний каталог і відкриває 1–3 картки. Економія 90%+ токенів на кожному запиті
+          (вкладка Dashboard показує цифри).</li>
+          <li><b>Памʼять між сесіями.</b> Те, що ти пояснив агенту сьогодні, він знатиме і через
+          місяць — у будь-якому проєкті.</li>
+          <li><b>Секрети — під замком.</b> Паролі/ключі шифруються мастер-паролем (AES-256),
+          агент їх ніколи не бачить.</li>
+          <li><b>Без vendor lock-in.</b> Це просто .md файли — відкриються будь-де і через 20 років.</li>
+        </ul>
+        <p><b>Коротко:</b> це довгострокова памʼять для тебе і твоїх AI-агентів,
+        яка коштує мінімум токенів і належить тільки тобі.</p>
+      </div>
+      <div class="row">
+        <button type="button" id="about-close">Зрозуміло</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-feedback" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card fb-card">
+      <h2>Опросник</h2>
+      <p>Відповіді збережуться в один файл-артефакт — його можна надіслати розробнику.</p>
+
+      <div class="fb-grid">
+        <label>Твоє імʼя
+          <input id="fb-tester" type="text" placeholder="igor" />
+        </label>
+        <label>Система
+          <input id="fb-platform" type="text" placeholder="macOS 15, M2" />
+        </label>
+      </div>
+
+      <div class="fb-questions" id="fb-questions">
+        <div class="fb-q" data-key="install_ok"><span>Встановилось з першого разу?</span></div>
+        <div class="fb-q" data-key="first_run_clear"><span>Перший запуск був зрозумілий?</span></div>
+        <div class="fb-q" data-key="search_ok"><span>Пошук знаходить те, що треба?</span></div>
+        <div class="fb-q" data-key="import_ok"><span>Імпорт .md папки спрацював?</span></div>
+        <div class="fb-q" data-key="dashboard_useful"><span>Dashboard корисний?</span></div>
+        <div class="fb-q" data-key="trust_encryption"><span>Довіряєш шифруванню секретів?</span></div>
+        <div class="fb-q" data-key="would_use_daily"><span>Користувався б щодня?</span></div>
+      </div>
+
+      <label>Оцінка: <b id="fb-score-val">7</b>/10
+        <input id="fb-score" type="range" min="1" max="10" value="7" />
+      </label>
+
+      <label>Одна річ, яку виправити першою
+        <input id="fb-topfix" type="text" placeholder="напр.: незрозуміло, куди зберігається пароль" />
+      </label>
+
+      <label>Вільні коментарі (що сподобалось / дратує / не вистачає)
+        <textarea id="fb-comments" rows="5" placeholder="Пиши як є — це піде розробнику"></textarea>
+      </label>
+
+      <div class="row">
+        <button type="button" id="fb-cancel" class="ghost">Cancel</button>
+        <button type="button" id="fb-send">Зберегти артефакт</button>
+      </div>
+      <p id="fb-status" class="hint"></p>
+      <p id="fb-err" class="err"></p>
+    </div>
+  </div>
+
+  <div id="setup" class="setup hidden">
+    <div class="setup-inner">
+      <h1>Brain</h1>
+      <p>Вкажи абсолютний шлях до папки на Google Drive.<br/>
+      Якщо vault ще немає — створимо його в цій папці.</p>
+      <input id="setup-path" type="text" placeholder="/Users/…/Google Drive/Brain" />
+      <button type="button" id="setup-save">Зберегти / створити vault</button>
+      <p id="setup-err" class="err"></p>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
