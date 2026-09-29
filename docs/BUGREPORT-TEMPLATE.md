@@ -1,42 +1,27 @@
-# Bug report — Brain
+# Bug report template
 
-Скопіюй цей файл, заповни і надішли (один баг = один файл).
+**Version:** (`brain --version`)  
+**OS / arch:**  
+**Install path:** Brain.app / pip / source  
 
-## Середовище
+## What happened
 
-- macOS версія: <!-- Apple menu → About This Mac -->
-- Чип: <!-- Apple Silicon (M1/M2/…) або Intel -->
-- Версія Brain: <!-- в терміналі: brain --version -->
-- Як запускав: <!-- Brain.app / термінал `brain ui` / `brain desktop` -->
+## Expected
 
-## Що робив (кроки)
+## Steps to reproduce
 
 1.
 2.
 3.
 
-## Що очікував
+## Logs (no secrets)
 
-<!-- Наприклад: «Мала створитись картка» -->
+Paste from `~/Library/Logs/BrainTools/desktop.log` / `ui.log` with passwords redacted.
 
-## Що сталося насправді
-
-<!-- Текст помилки, або опиши поведінку. Скріншот дуже допомагає. -->
-
-## Діагностика (якщо можеш)
-
-Виконай у терміналі й встав вивід:
+## Doctor
 
 ```bash
 brain doctor
-brain status
 ```
 
-Логи (якщо є):
-
-- Інсталяція: `/tmp/braintools-install.log`
-- UI: `~/Library/Logs/BrainTools/ui.log`
-
-## Скріншоти
-
-<!-- Перетягни файли сюди або додай поруч -->
+Paste output (paths OK; no master password).
