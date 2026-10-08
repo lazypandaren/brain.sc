@@ -151,50 +151,61 @@
     });
     const byId = nodeMap();
 
-    hubIds.forEach((hid, i) => {
-      const n = byId.get(hid);
-      if (!n) return;
-      const ang = (i / hubIds.length) * Math.PI * 2 - Math.PI / 2;
-      const jitter = (hash01(hid + ":hj") - 0.5) * 36;
-      n.x = cx + Math.cos(ang) * hubRing + jitter;
-      n.y = cy + Math.sin(ang) * hubRing + jitter * 0.7;
-      n.home = hid;
-    });
-
-    // Assign each card to a home hub (prefer linked high-degree hub)
-    for (const n of nodes) {
-      if (hubSet.has(n.id)) continue;
-      let best = null, bestScore = -1;
-      for (const nb of adj.get(n.id) || []) {
-        if (!hubSet.has(nb)) continue;
-        const hn = byId.get(nb);
-        const score = (hn && hn.degree) || 0;
-        if (score > bestScore) {
-          bestScore = score;
-          best = nb;
-        }
-      }
-      n.home = best || nearestHubId(n.id, hubIds, adj) || hubIds[0];
-    }
-
-    // Orbit satellites around their home hub
-    const members = new Map();
-    for (const n of nodes) {
-      const hid = n.home || hubIds[0];
-      if (!members.has(hid)) members.set(hid, []);
-      members.get(hid).push(n);
-    }
-    for (const [hid, list] of members) {
-      const hub = byId.get(hid);
-      if (!hub) continue;
-      const sats = list.filter((n) => n.id !== hid);
-      const baseR = 78 + Math.min(70, sats.length * 4);
-      sats.forEach((n, i) => {
-        const ang = (i / Math.max(sats.length, 1)) * Math.PI * 2 + hash01(n.id + ":o") * 0.4;
-        const rad = baseR * (0.65 + hash01(n.id + ":rr") * 0.7);
-        n.x = hub.x + Math.cos(ang) * rad;
-        n.y = hub.y + Math.sin(ang) * rad;
+    if (hubIds.length === 0) {
+      // No tag=hub yet — still show every card in a soft cloud (don't blank the graph)
+      const ring = Math.min(w, h) * 0.28;
+      nodes.forEach((n, i) => {
+        const ang = (i / Math.max(nodes.length, 1)) * Math.PI * 2;
+        const rad = ring * (0.35 + hash01(n.id + ":nr") * 0.9);
+        n.x = cx + Math.cos(ang) * rad;
+        n.y = cy + Math.sin(ang) * rad;
       });
+    } else {
+      hubIds.forEach((hid, i) => {
+        const n = byId.get(hid);
+        if (!n) return;
+        const ang = (i / hubIds.length) * Math.PI * 2 - Math.PI / 2;
+        const jitter = (hash01(hid + ":hj") - 0.5) * 36;
+        n.x = cx + Math.cos(ang) * hubRing + jitter;
+        n.y = cy + Math.sin(ang) * hubRing + jitter * 0.7;
+        n.home = hid;
+      });
+
+      // Assign each card to a home hub (prefer linked hub)
+      for (const n of nodes) {
+        if (hubSet.has(n.id)) continue;
+        let best = null, bestScore = -1;
+        for (const nb of adj.get(n.id) || []) {
+          if (!hubSet.has(nb)) continue;
+          const hn = byId.get(nb);
+          const score = (hn && hn.degree) || 0;
+          if (score > bestScore) {
+            bestScore = score;
+            best = nb;
+          }
+        }
+        n.home = best || nearestHubId(n.id, hubIds, adj) || hubIds[0];
+      }
+
+      // Orbit satellites around their home hub
+      const members = new Map();
+      for (const n of nodes) {
+        const hid = n.home || hubIds[0];
+        if (!members.has(hid)) members.set(hid, []);
+        members.get(hid).push(n);
+      }
+      for (const [hid, list] of members) {
+        const hub = byId.get(hid);
+        if (!hub) continue;
+        const sats = list.filter((n) => n.id !== hid);
+        const baseR = 78 + Math.min(70, sats.length * 4);
+        sats.forEach((n, i) => {
+          const ang = (i / Math.max(sats.length, 1)) * Math.PI * 2 + hash01(n.id + ":o") * 0.4;
+          const rad = baseR * (0.65 + hash01(n.id + ":rr") * 0.7);
+          n.x = hub.x + Math.cos(ang) * rad;
+          n.y = hub.y + Math.sin(ang) * rad;
+        });
+      }
     }
 
     if (prev) {
@@ -791,8 +802,10 @@
 
   document.getElementById("filter-hub").onchange = (ev) => {
     const v = ev.target.value;
-    document.getElementById("filter-tag").value = "";
-    document.getElementById("filter-mode").value = "";
+    const tagSel = document.getElementById("filter-tag");
+    const modeSel = document.getElementById("filter-mode");
+    if (tagSel) tagSel.value = "";
+    if (modeSel) modeSel.value = "";
     if (!v) {
       filterFocus = null;
       return;
@@ -801,8 +814,10 @@
   };
   document.getElementById("filter-tag").onchange = (ev) => {
     const v = ev.target.value;
-    document.getElementById("filter-hub").value = "";
-    document.getElementById("filter-mode").value = "";
+    const hubSel = document.getElementById("filter-hub");
+    const modeSel = document.getElementById("filter-mode");
+    if (hubSel) hubSel.value = "";
+    if (modeSel) modeSel.value = "";
     if (!v) {
       filterFocus = null;
       return;
@@ -810,42 +825,53 @@
     filterFocus = { type: "tag", id: v };
     fitNodes(nodes.filter((n) => nodeInFocus(n)));
   };
-  document.getElementById("filter-mode").onchange = (ev) => {
-    const v = ev.target.value;
-    document.getElementById("filter-hub").value = "";
-    document.getElementById("filter-tag").value = "";
-    if (!v) {
-      filterFocus = null;
-      fitNodes(nodes);
-      return;
-    }
-    filterFocus = { type: "mode", id: v };
-    fitNodes(nodes.filter((n) => nodeInFocus(n)));
-  };
+  const filterMode = document.getElementById("filter-mode");
+  if (filterMode) {
+    filterMode.onchange = (ev) => {
+      const v = ev.target.value;
+      const hubSel = document.getElementById("filter-hub");
+      const tagSel = document.getElementById("filter-tag");
+      if (hubSel) hubSel.value = "";
+      if (tagSel) tagSel.value = "";
+      if (!v) {
+        filterFocus = null;
+        fitNodes(nodes);
+        return;
+      }
+      filterFocus = { type: "mode", id: v };
+      fitNodes(nodes.filter((n) => nodeInFocus(n)));
+    };
+  }
   document.getElementById("btn-fit").onclick = () => {
     const members = filterFocus ? nodes.filter((n) => nodeInFocus(n)) : nodes;
     fitNodes(members);
   };
   document.getElementById("btn-filter-clear").onclick = () => {
     filterFocus = null;
-    document.getElementById("filter-hub").value = "";
-    document.getElementById("filter-tag").value = "";
-    document.getElementById("filter-mode").value = "";
+    const hubSel = document.getElementById("filter-hub");
+    const tagSel = document.getElementById("filter-tag");
+    const modeSel = document.getElementById("filter-mode");
+    if (hubSel) hubSel.value = "";
+    if (tagSel) tagSel.value = "";
+    if (modeSel) modeSel.value = "";
     fitNodes(nodes);
   };
-  document.getElementById("btn-daily").onclick = async () => {
-    try {
-      const data = await api("/api/daily", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
-      await reload({ keepPositions: true });
-      await openCard(data.id);
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const btnDaily = document.getElementById("btn-daily");
+  if (btnDaily) {
+    btnDaily.onclick = async () => {
+      try {
+        const data = await api("/api/daily", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        await reload({ keepPositions: true });
+        await openCard(data.id);
+      } catch (e) {
+        console.error(e);
+      }
+    };
+  }
 
   function updateUnlockBtn() {
     const btn = document.getElementById("btn-unlock");

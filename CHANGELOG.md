@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.2
+
+### Fixed
+- Desktop: Cmd+Q / Dock Quit actually quits (no more Force Quit trap); red close still hides to tray
+- Desktop: Dock click restores window after hide (`applicationShouldHandleReopen`)
+- Desktop: menu-bar icon uses AppIcon + in-bundle `BrainPython` so macOS attributes extras to Brain.app (`com.braintools.app`), not bare `python3.12`
+- Hot-patch / launcher scripts resolve `site-packages` via `sysconfig` (Python 3.10+, not hardcoded 3.12)
+- Graph: empty-hub cloud layout + null-safe filter controls (no blank graph / NPE when `filter-mode` missing)
+
+### Changed
+- `Brain.app` packaging copies runtime interpreter into `Contents/MacOS/BrainPython` and links `Contents/lib`
+
 ## 0.4.1
 
 ### Fixed
