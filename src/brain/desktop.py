@@ -26,6 +26,9 @@ from brain.ui_server import run_ui
 _allow_quit = False
 _keepalive_ref = None  # strong refs so PyObjC objects are not GC'd
 _tray_refs: list = []
+_tray_status = None  # NSStatusItem — keep for remove/reinstall
+_main_window = None  # pywebview window — Dock reopen / tray Show
+_TrayDelegateCls = None  # NSObject subclass — create once (PyObjC)
 
 
 def _log_path() -> Path:
@@ -100,12 +103,12 @@ def _wait_ready(port: int, timeout: float = 8.0) -> None:
 
 
 def _patch_cocoa_tray_lifecycle() -> None:
-    """Keep NSApp alive when the pywebview window is hidden (close → tray).
+    """Close button → hide to tray; Cmd+Q / Dock Quit → real quit.
 
     pywebview's Cocoa backend calls app.stop_() in windowWillClose_ when the last
-    BrowserView is gone. Returning False from events.closing is not enough on its
-    own if the AppKit close path still runs — we hard-block windowShouldClose_
-    unless Quit was chosen, and cancel application terminate (Cmd+Q → hide).
+    BrowserView is gone. We block windowShouldClose_ unless Quit was chosen so the
+    red traffic light only hides. Cmd+Q must terminate — otherwise Force Quit is
+    the only escape when the menu-bar icon is missing.
     """
     if sys.platform != "darwin":
         return
@@ -123,7 +126,6 @@ def _patch_cocoa_tray_lifecycle() -> None:
         try:
             i = cocoa.BrowserView.get_instance("window", window)
             if i is not None:
-                # Hide on the AppKit side immediately (same as BrowserView.hide)
                 try:
                     i.window.orderOut_(i.window)
                 except Exception:
@@ -140,27 +142,23 @@ def _patch_cocoa_tray_lifecycle() -> None:
         return False
 
     def applicationShouldTerminate_(self, app):  # noqa: N802, ANN001
+        # Cmd+Q / Dock Quit = real exit (not hide). Close button still trays.
         global _allow_quit
-        if _allow_quit:
-            return Foundation.YES
-        # Cmd+Q / Dock Quit → tray, same as red traffic light
-        try:
-            for i in list(cocoa.BrowserView.instances.values()):
-                try:
-                    i.window.orderOut_(i.window)
-                except Exception:
-                    try:
-                        i.hide()
-                    except Exception:
-                        pass
-            _desk_log("terminate cancelled → hide (Cmd+Q → tray)")
-        except Exception as e:
-            _desk_log(f"terminate-hide failed: {e}")
-        return Foundation.NO
+        _allow_quit = True
+        _desk_log("terminate allowed (Cmd+Q / Dock Quit)")
+        return Foundation.YES
+
+    def applicationShouldHandleReopen_hasVisibleWindows_(  # noqa: N802
+        self, app, has_visible_windows
+    ):
+        # Dock icon click after orderOut (close → tray): restore window.
+        _desk_log(f"dock reopen hasVisible={bool(has_visible_windows)}")
+        if _main_window is not None:
+            _show_window(_main_window)
+        return Foundation.YES
 
     try:
         cocoa.BrowserView.WindowDelegate.windowShouldClose_ = windowShouldClose_
-        # Subclass so newly allocated AppDelegate gets both methods
         Base = cocoa.BrowserView.AppDelegate
 
         class BrainAppDelegate(Base):  # type: ignore[misc, valid-type]
@@ -170,13 +168,23 @@ def _patch_cocoa_tray_lifecycle() -> None:
             applicationShouldTerminateAfterLastWindowClosed_
         )
         BrainAppDelegate.applicationShouldTerminate_ = applicationShouldTerminate_  # type: ignore[method-assign]
+        BrainAppDelegate.applicationShouldHandleReopen_hasVisibleWindows_ = (  # type: ignore[method-assign]
+            applicationShouldHandleReopen_hasVisibleWindows_
+        )
         cocoa.BrowserView.AppDelegate = BrainAppDelegate
-        # If pywebview already installed a shared delegate, swap methods on it too
         shared = getattr(cocoa.BrowserView, "_shared_app_delegate", None)
         if shared is not None:
             try:
                 shared.applicationShouldTerminateAfterLastWindowClosed_ = (  # type: ignore[method-assign]
                     applicationShouldTerminateAfterLastWindowClosed_.__get__(shared, type(shared))
+                )
+                shared.applicationShouldTerminate_ = (  # type: ignore[method-assign]
+                    applicationShouldTerminate_.__get__(shared, type(shared))
+                )
+                shared.applicationShouldHandleReopen_hasVisibleWindows_ = (  # type: ignore[method-assign]
+                    applicationShouldHandleReopen_hasVisibleWindows_.__get__(
+                        shared, type(shared)
+                    )
                 )
             except Exception:
                 pass
@@ -185,26 +193,95 @@ def _patch_cocoa_tray_lifecycle() -> None:
         _desk_log(f"cocoa patch failed: {e}")
 
 
-def _install_macos_tray(window) -> None:
-    """Menu bar item 🧠 with Show / Quit. Must run on AppKit main thread."""
-    global _tray_refs
+def _menu_bar_image():
+    """Menu-bar icon: AppIcon (colored) preferred; SF Symbol fallback.
+
+    SF Symbol templates often render blank for non-bundled Python hosts on
+    recent macOS — AppIcon.icns + title is the reliable pair.
+    """
     try:
         from AppKit import (  # type: ignore
-            NSApplication,
-            NSApplicationActivationPolicyRegular,
-            NSMenu,
-            NSMenuItem,
-            NSStatusBar,
-            NSVariableStatusItemLength,
+            NSCompositingOperationSourceOver,
+            NSImage,
         )
-        from Foundation import NSObject  # type: ignore
+        from Foundation import NSMakeRect, NSZeroRect  # type: ignore
     except Exception as e:
-        _desk_log(f"tray AppKit import failed: {e}")
-        return
+        _desk_log(f"tray image import failed: {e}")
+        return None, None
+
+    candidates: list[Path] = [
+        Path("/Applications/Brain.app/Contents/Resources/AppIcon.icns"),
+        Path("/usr/local/lib/brain-tools/Brain.app/Contents/Resources/AppIcon.icns"),
+        Path("/usr/local/lib/brain-tools/packaging/macos/brain-icon-1024.png"),
+    ]
+    try:
+        here = Path(__file__).resolve()
+        # site-packages/brain/desktop.py → …/brain-tools or repo src/brain
+        for up in (here.parents[2], here.parents[3]):
+            candidates.append(up / "packaging" / "macos" / "brain-icon-1024.png")
+            candidates.append(
+                up / "Brain.app" / "Contents" / "Resources" / "AppIcon.icns"
+            )
+    except Exception:
+        pass
+
+    src = None
+    src_name = None
+    for p in candidates:
+        try:
+            if not p.is_file():
+                continue
+            loaded = NSImage.alloc().initWithContentsOfFile_(str(p))
+            if loaded is not None:
+                src, src_name = loaded, str(p)
+                break
+        except Exception:
+            continue
+
+    if src is None:
+        try:
+            src = NSImage.imageWithSystemSymbolName_accessibilityDescription_(
+                "brain", "Brain"
+            )
+            src_name = "sf:brain"
+        except Exception:
+            src = None
+        if src is None:
+            return None, None
+
+    try:
+        size = 18.0
+        out = NSImage.alloc().initWithSize_((size, size))
+        out.lockFocus()
+        src.drawInRect_fromRect_operation_fraction_(
+            NSMakeRect(0, 0, size, size),
+            NSZeroRect,
+            NSCompositingOperationSourceOver,
+            1.0,
+        )
+        out.unlockFocus()
+        # Colored (non-template) — template SF Symbols were invisible in practice
+        try:
+            out.setTemplate_(False)
+        except Exception:
+            pass
+        return out, src_name
+    except Exception as e:
+        _desk_log(f"tray image scale failed: {e}")
+        return src, src_name
+
+
+def _tray_delegate_class():
+    """Create TrayDelegate once — redefining NSObject subclasses breaks PyObjC targets."""
+    global _TrayDelegateCls
+    if _TrayDelegateCls is not None:
+        return _TrayDelegateCls
+    from AppKit import NSApplication  # type: ignore
+    from Foundation import NSObject  # type: ignore
 
     class TrayDelegate(NSObject):  # type: ignore[misc, valid-type]
         def showWindow_(self, _sender) -> None:  # noqa: N802
-            _show_window(window)
+            _show_window()
 
         def quitApp_(self, _sender) -> None:  # noqa: N802
             global _allow_quit
@@ -221,6 +298,28 @@ def _install_macos_tray(window) -> None:
                 pass
             NSApplication.sharedApplication().terminate_(None)
 
+    _TrayDelegateCls = TrayDelegate
+    return TrayDelegate
+
+
+def _install_macos_tray(window) -> None:
+    """Menu bar item with Show / Quit. Must run on AppKit main thread."""
+    global _tray_refs, _tray_status
+    try:
+        from AppKit import (  # type: ignore
+            NSApplication,
+            NSApplicationActivationPolicyRegular,
+            NSImageOnly,
+            NSMenu,
+            NSMenuItem,
+            NSSquareStatusItemLength,
+            NSStatusBar,
+            NSVariableStatusItemLength,
+        )
+    except Exception as e:
+        _desk_log(f"tray AppKit import failed: {e}")
+        return
+
     try:
         app = NSApplication.sharedApplication()
         try:
@@ -228,40 +327,139 @@ def _install_macos_tray(window) -> None:
         except Exception:
             pass
 
+        bar = NSStatusBar.systemStatusBar()
+        # Drop previous item if we re-install (avoids ghost / lost refs)
+        if _tray_status is not None:
+            try:
+                bar.removeStatusItem_(_tray_status)
+            except Exception:
+                pass
+            _tray_status = None
+
+        TrayDelegate = _tray_delegate_class()
         delegate = TrayDelegate.alloc().init()
-        status = NSStatusBar.systemStatusBar().statusItemWithLength_(
-            NSVariableStatusItemLength
+        img, img_name = _menu_bar_image()
+        # Prefer compact square icon (fits notch). Title-only if image missing.
+        length = (
+            NSSquareStatusItemLength if img is not None else NSVariableStatusItemLength
         )
-        _tray_refs = [delegate, status]
+        status = bar.statusItemWithLength_(length)
+        try:
+            status.retain()
+            delegate.retain()
+        except Exception:
+            pass
+        try:
+            status.setVisible_(True)
+        except Exception:
+            pass
+        # Do NOT set autosaveName — macOS can permanently hide the item after
+        # Cmd-drag / Control Center toggle and keep that preference.
+
+        # Keep strong refs forever — otherwise GC removes the menu-bar icon
+        _tray_status = status
+        _tray_refs = [delegate, status, bar]
         window._brain_tray = status  # type: ignore[attr-defined]
         window._brain_tray_delegate = delegate  # type: ignore[attr-defined]
 
+        bundle_id = None
+        bundle_path = None
+        try:
+            from Foundation import NSBundle  # type: ignore
+
+            b = NSBundle.mainBundle()
+            bundle_id = str(b.bundleIdentifier() or "")
+            bundle_path = str(b.bundlePath() or "")
+        except Exception:
+            pass
+
+
         button = status.button()
+        title_set = False
+        image_set = False
+        frame_w = frame_h = None
         if button is not None:
-            button.setTitle_("🧠")
-            button.setToolTip_("Brain — Показати / Вийти")
+            button.setToolTip_("Brain — Show / Quit")
+            if img is not None:
+                button.setImage_(img)
+                button.setTitle_("")  # icon-only keeps ~22pt — survives notch crowding
+                try:
+                    button.setImagePosition_(NSImageOnly)
+                except Exception:
+                    pass
+                image_set = True
+                _tray_refs.append(img)
+            else:
+                button.setTitle_("Brain")
+                title_set = True
+            try:
+                button.setEnabled_(True)
+                button.setHidden_(False)
+            except Exception:
+                pass
+            try:
+                fr = button.frame()
+                frame_w = float(fr.size.width)
+                frame_h = float(fr.size.height)
+            except Exception:
+                pass
+        else:
+            try:
+                if img is not None:
+                    status.setImage_(img)
+                    image_set = True
+                else:
+                    status.setTitle_("Brain")
+                    title_set = True
+            except Exception as e:
+                _desk_log(f"tray legacy set failed: {e}")
 
         menu = NSMenu.alloc().init()
         show = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Показати Brain", "showWindow:", ""
+            "Show Brain", "showWindow:", ""
         )
         show.setTarget_(delegate)
         menu.addItem_(show)
         menu.addItem_(NSMenuItem.separatorItem())
         quit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            "Вийти", "quitApp:", "q"
+            "Quit", "quitApp:", ""
         )
         quit_item.setTarget_(delegate)
         menu.addItem_(quit_item)
         status.setMenu_(menu)
-        _desk_log("tray installed")
+        try:
+            menu.retain()
+        except Exception:
+            pass
+        _tray_refs.extend([menu, show, quit_item])
+
+        visible = None
+        try:
+            visible = bool(status.isVisible())
+        except Exception:
+            pass
+        length = None
+        try:
+            length = float(status.length())
+        except Exception:
+            pass
+        _desk_log(
+            f"tray installed image={img_name!s} image_set={image_set} "
+            f"title_set={title_set} visible={visible} button={button is not None} "
+            f"frame={frame_w}x{frame_h} length={length} "
+            f"bundle_id={bundle_id!s} bundle={bundle_path!s}"
+        )
     except Exception as e:
         _desk_log(f"tray install failed: {e}")
         return
 
 
-def _show_window(window) -> None:
+def _show_window(window=None) -> None:
     """Bring Brain window forward — must run on AppKit main thread (macOS)."""
+    window = window or _main_window
+    if window is None:
+        _desk_log("show skipped: no window ref")
+        return
 
     def _do() -> None:
         # Must return None for NSBlock
@@ -278,13 +476,30 @@ def _show_window(window) -> None:
                 from AppKit import NSApplication  # type: ignore
                 from webview.platforms import cocoa  # type: ignore
 
-                i = cocoa.BrowserView.instances.get(getattr(window, "uid", None))
-                if i is not None and getattr(i, "window", None) is not None:
-                    i.window.deminiaturize_(i.window)
-                    i.window.makeKeyAndOrderFront_(i.window)
-                    i.window.orderFrontRegardless()
+                uid = getattr(window, "uid", None)
+                instances = list(cocoa.BrowserView.instances.values())
+                targets = []
+                if uid is not None and uid in cocoa.BrowserView.instances:
+                    targets = [cocoa.BrowserView.instances[uid]]
+                elif instances:
+                    targets = instances
+                shown = 0
+                for i in targets:
+                    nsw = getattr(i, "window", None)
+                    if nsw is None:
+                        continue
+                    try:
+                        nsw.deminiaturize_(nsw)
+                    except Exception:
+                        pass
+                    nsw.makeKeyAndOrderFront_(nsw)
+                    try:
+                        nsw.orderFrontRegardless()
+                    except Exception:
+                        pass
+                    shown += 1
                 NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
-                _desk_log("window shown")
+                _desk_log(f"window shown count={shown} instances={len(instances)}")
             except Exception as e:
                 _desk_log(f"native show failed: {e}")
 
@@ -323,18 +538,57 @@ def _schedule_tray_on_main(window) -> None:
         return
 
     def _setup() -> None:
-        # Must return None — NSBlockOperation rejects non-void Python returns
+        # Must return None — NSBlockOperation / callAfter reject non-void returns
         _install_macos_tray(window)
 
+    scheduled = False
+    # Prefer PyObjCTools.AppHelper.callAfter — same runloop path as pywebview Cocoa
     try:
-        from Foundation import NSOperationQueue  # type: ignore
+        from PyObjCTools import AppHelper  # type: ignore
 
-        NSOperationQueue.mainQueue().addOperationWithBlock_(_setup)
-    except Exception:
+        AppHelper.callAfter(_setup)
+        scheduled = True
+    except Exception as e:
+        _desk_log(f"tray AppHelper schedule failed: {e}")
+
+    if not scheduled:
+        try:
+            from Foundation import NSOperationQueue  # type: ignore
+
+            NSOperationQueue.mainQueue().addOperationWithBlock_(_setup)
+            scheduled = True
+        except Exception as e:
+            _desk_log(f"tray NSOperationQueue schedule failed: {e}")
+
+    if not scheduled:
         try:
             _setup()
         except Exception as e:
             _desk_log(f"tray schedule failed: {e}")
+            return
+
+    def _retry_later() -> None:
+        time.sleep(1.5)
+        _desk_log("tray reinstall pass")
+        try:
+            from PyObjCTools import AppHelper  # type: ignore
+
+            AppHelper.callAfter(lambda: _install_macos_tray(window))
+            return
+        except Exception:
+            pass
+        try:
+            from Foundation import NSOperationQueue  # type: ignore
+
+            NSOperationQueue.mainQueue().addOperationWithBlock_(
+                lambda: _install_macos_tray(window)
+            )
+        except Exception as e:
+            _desk_log(f"tray retry failed: {e}")
+
+    threading.Thread(
+        target=_retry_later, daemon=True, name="brain-tray-retry"
+    ).start()
 
 
 def run_desktop(root: Path | None = None, port: int | None = None) -> None:
@@ -381,6 +635,7 @@ def run_desktop(root: Path | None = None, port: int | None = None) -> None:
     _wait_ready(port)
     _desk_log(f"desktop start port={port} root={root}")
 
+    global _main_window
     window = webview.create_window(
         title="Brain",
         url=f"http://127.0.0.1:{port}/",
@@ -390,14 +645,12 @@ def run_desktop(root: Path | None = None, port: int | None = None) -> None:
         background_color="#061018",
         text_select=True,
     )
+    _main_window = window
 
     def on_closing() -> bool:
-        # Belt-and-suspenders with windowShouldClose_ patch
-        try:
-            window.hide()
-            _desk_log("window hidden (close → tray)")
-        except Exception as e:
-            _desk_log(f"hide failed: {e}")
+        # Cocoa windowShouldClose_ already orderOuts; keep False so process stays.
+        # Do not call window.hide() here — races with Dock reopen / show.
+        _desk_log("closing event → stay alive (tray)")
         return False
 
     try:
