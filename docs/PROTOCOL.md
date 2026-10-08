@@ -7,16 +7,18 @@ Why MD catalog wins: `docs/TOKENS.md`. Automations patterns: `docs/AUTOMATIONS.m
 1. If long-term knowledge may help → do not dump the vault.
 2. Read `BRAIN.md` + prefer **`index/catalog.md`** or `brain search <q>` (not a full `cards/` scan).
 3. Open at most **1–3** cards; prefer TL;DR (`brain get`, not `--full` unless needed).
-4. Never read `_raw/` or `secure/*.enc`. Never ask for the master password in chat.
-5. If root unset → ask user to `brain init|set-root` or UI Settings.
-6. **UI availability:** `brain status` → if `ui_running=False`, tell the user to start Brain (`brain ui` / Brain.app / `brain autostart on`).
-7. **Write-back (do not rely on user memory):**
+4. **Hubs ≠ degree:** cards with tag `hub` are intentional entry points. Use `brain hub list` / `brain hub suggest "<keywords>"`. Degree/orphan graph filters are UI-only — do not file cards by link count.
+5. Never read `_raw/` or `secure/*.enc`. Never ask for the master password in chat.
+6. If root unset → ask user to `brain init|set-root` or UI Settings.
+7. **UI availability:** `brain status` → if `ui_running=False`, tell the user to start Brain (`brain ui` / Brain.app / `brain autostart on`).
+8. **Write-back (do not rely on user memory):**
    - Mid-session durable fact → `brain active --set "…"` (short scratch line; not a full card yet).
    - Do **not** silently `brain add` / `brain remember` unless the user said to write.
-   - When wrapping useful work (or end of session) → **always ask** in the user’s language: save to Brain? Offer a ready draft (slug + TL;DR ≤5 lines) and/or one-line `brain remember`. On yes → write; on no → leave `active` as-is.
+   - When wrapping useful work (or end of session) → **always ask** in the user’s language: save to Brain? Offer a ready draft (slug + TL;DR ≤5 lines), suggested hub, and/or one-line `brain remember`. Prefer `brain add … --hub auto` when aliases match. On yes → write; on no → leave `active` as-is.
+   - New project → `brain hub init <slug> --aliases "a,b,c"` (keep Aliases: line in TL;DR).
    - Optional hygiene: `brain recipe run after-session`.
-8. **After-task learning** (`after-task-learning`): wrap meaningful work with 3–7 fundamental theses (what / why / how to verify / trap / next time) — learning aid, not a chat log.
-9. Hygiene → `brain recipe run nightly-hygiene` (reindex + doctor).
-10. Upgrade tooling (no vault wipe): `brain upgrade --pkg BrainTools-….pkg` or `./scripts/macos/upgrade.sh`.
+9. **After-task learning** (`after-task-learning`): wrap meaningful work with 3–7 fundamental theses (what / why / how to verify / trap / next time) — learning aid, not a chat log.
+10. Hygiene → `brain recipe run nightly-hygiene` (reindex + doctor).
+11. Upgrade tooling (no vault wipe): `brain upgrade --pkg BrainTools-….pkg` or `./scripts/macos/upgrade.sh`.
 
-Install global snippets: `brain agents install` (Codex + Claude + Cursor).
+Install / refresh global snippets (includes hub contract): `brain agents install` (Codex + Claude + Cursor).

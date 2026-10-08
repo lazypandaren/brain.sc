@@ -1,10 +1,12 @@
 # Brain (global snippet for Claude)
 
-Cross-project memory uses the `brain` CLI / vault (see `~/Documents/projects/brain-tools`).
+Token-efficient Knowledge Brain retrieval:
 
-- Search first (`brain search`), then ≤3 cards (`brain get`), TL;DR before Details.
-- Do not read encrypted `secure/*.enc` or `_raw/`; do not ask for the master password — user unlocks locally.
-- Missing vault path → tell user to set it via `brain init` / `set-root` / UI Settings.
-- Check `brain status` → if `ui_running=False`, tell user to start Brain (`brain ui` / Brain.app / `brain autostart on`).
-- **Write-back:** mid-session → `brain active --set "…"`. Do not auto-save cards. When wrapping useful work → always ask whether to `brain add` / `brain remember` (user may forget).
-- Full rules: `CLAUDE.md` and `docs/PROTOCOL.md` in brain-tools.
+1. `brain search` → ≤3 `brain get` (TL;DR first).
+2. **Hubs ≠ degree:** prefer tagged hubs (`brain hub list` / `suggest`). New cards: `brain add … --hub auto` when aliases match.
+3. Never read `secure/*.enc` or `_raw/`; never ask for the master password — user unlocks locally.
+4. Unset root → `brain init|set-root` / UI Settings.
+5. `ui_running=False` → tell user to start Brain (`brain ui` / Brain.app / `brain autostart on`).
+6. Write-back: `brain active` scratch; at wrap-up **always ask** to save (`brain add` / `brain remember` + hub).
+
+Full protocol: brain-tools `CLAUDE.md` / `docs/PROTOCOL.md`.
