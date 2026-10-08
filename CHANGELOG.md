@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1
+
+### Fixed
+- Graph red hubs = cards with tag `hub` (not top-N by degree)
+- Desktop Show handoff: run `_show_window` on AppKit main queue (fixes exit 133 after tray show)
+
 ## 0.4.0
 
 ### Added

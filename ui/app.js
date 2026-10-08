@@ -126,19 +126,10 @@
     edges = graph.edges.filter((e) => idSet.has(e.source) && idSet.has(e.target));
     const adj = buildAdj(edges);
 
-    // Promote enough hubs so clusters form (degree already set by API)
-    let ranked = graph.nodes.slice().sort((a, b) => (b.degree || 0) - (a.degree || 0));
-    const hubIds = [];
-    for (const n of ranked) {
-      if (n.hub || (n.degree || 0) >= 3) hubIds.push(n.id);
-      if (hubIds.length >= 12) break;
-    }
-    if (hubIds.length < 3) {
-      for (const n of ranked) {
-        if (!hubIds.includes(n.id)) hubIds.push(n.id);
-        if (hubIds.length >= 5) break;
-      }
-    }
+    // Red hubs are cards tagged hub, not the 12 busiest nodes.
+    let hubIds = graph.nodes
+      .filter((n) => (n.tags || []).includes("hub"))
+      .map((n) => n.id);
     const hubSet = new Set(hubIds);
 
     // Place hubs on a soft ring — space between project clusters

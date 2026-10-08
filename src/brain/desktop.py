@@ -261,29 +261,50 @@ def _install_macos_tray(window) -> None:
 
 
 def _show_window(window) -> None:
-    """Bring Brain window forward (pywebview + native AppKit fallback)."""
-    try:
-        window.show()
-    except Exception:
-        pass
-    try:
-        window.restore()
-    except Exception:
-        pass
-    if sys.platform == "darwin":
-        try:
-            from AppKit import NSApplication  # type: ignore
-            from webview.platforms import cocoa  # type: ignore
+    """Bring Brain window forward — must run on AppKit main thread (macOS)."""
 
-            i = cocoa.BrowserView.instances.get(getattr(window, "uid", None))
-            if i is not None and getattr(i, "window", None) is not None:
-                i.window.deminiaturize_(i.window)
-                i.window.makeKeyAndOrderFront_(i.window)
-                i.window.orderFrontRegardless()
-            NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
-            _desk_log("window shown")
-        except Exception as e:
-            _desk_log(f"native show failed: {e}")
+    def _do() -> None:
+        # Must return None for NSBlock
+        try:
+            window.show()
+        except Exception:
+            pass
+        try:
+            window.restore()
+        except Exception:
+            pass
+        if sys.platform == "darwin":
+            try:
+                from AppKit import NSApplication  # type: ignore
+                from webview.platforms import cocoa  # type: ignore
+
+                i = cocoa.BrowserView.instances.get(getattr(window, "uid", None))
+                if i is not None and getattr(i, "window", None) is not None:
+                    i.window.deminiaturize_(i.window)
+                    i.window.makeKeyAndOrderFront_(i.window)
+                    i.window.orderFrontRegardless()
+                NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+                _desk_log("window shown")
+            except Exception as e:
+                _desk_log(f"native show failed: {e}")
+
+    if sys.platform != "darwin":
+        _do()
+        return
+    try:
+        from Foundation import NSOperationQueue  # type: ignore
+        from AppKit import NSThread  # type: ignore
+
+        if NSThread.isMainThread():
+            _do()
+        else:
+            NSOperationQueue.mainQueue().addOperationWithBlock_(_do)
+    except Exception as e:
+        _desk_log(f"show schedule failed: {e}")
+        try:
+            _do()
+        except Exception as e2:
+            _desk_log(f"show fallback failed: {e2}")
 
 
 def _watch_show_requests(window, stop: threading.Event) -> None:

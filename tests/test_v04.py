@@ -117,12 +117,24 @@ def test_graph_orphan_flag(cfgdir, tmp_path):
         vault,
         Card(id="lonely", title="Lonely", body="# TL;DR\nAlone\n\n## Details\n\n.\n"),
     )
+    write_card(
+        vault,
+        Card(
+            id="tagged-hub",
+            title="Tagged Hub",
+            tags=["hub", "meta"],
+            body="# TL;DR\nHub by tag\n\n## Details\n\n.\n",
+        ),
+    )
     rebuild_index(vault)
     g = graph_payload(vault)
     lonely = next(n for n in g["nodes"] if n["id"] == "lonely")
     assert lonely["orphan"] is True
-    hubbish = next(n for n in g["nodes"] if n["id"] == "how-to-use-brain")
-    assert hubbish["orphan"] is False
+    tagged = next(n for n in g["nodes"] if n["id"] == "tagged-hub")
+    assert tagged["hub"] is True
+    # Seed cards without tag hub must not be hubs even if linked
+    howto = next(n for n in g["nodes"] if n["id"] == "how-to-use-brain")
+    assert howto["hub"] is False
 
 
 def test_version_0_4():
