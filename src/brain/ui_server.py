@@ -43,15 +43,16 @@ def graph_payload(root: Path) -> dict[str, Any]:
         degree = degree_map.get(c["id"], 0)
         out_n = len(c.get("links") or [])
         in_n = inbound.get(c["id"], 0)
+        tags = c.get("tags") or []
         nodes.append(
             {
                 "id": c["id"],
                 "title": c.get("title") or c["id"],
-                "tags": c.get("tags") or [],
+                "tags": tags,
                 "tldr": c.get("tldr") or "",
                 "secure": bool(c.get("secure")),
                 "updated": c.get("updated") or "",
-                "hub": degree >= 3,
+                "hub": "hub" in tags,
                 "degree": degree,
                 "orphan": out_n == 0 and in_n == 0,
             }
