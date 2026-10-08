@@ -14,8 +14,9 @@ When the user asks about something that may be stored long-term:
 1. Prefer tools/CLI: `brain search "…"`.
 2. Then `brain get <slug>` for ≤3 hits — use TL;DR first.
 3. Only request `--full` / Details if TL;DR is insufficient.
-4. Refuse to bulk-read `_raw/` or decrypt `secure/*.enc`. Never solicit the master password in chat.
-5. `brain status`: if `ui_running=False` → tell the user to start Brain (`brain ui` / Brain.app / `brain autostart on`).
+4. **Hubs ≠ degree:** `brain hub list` / `suggest`; file with `brain add … --hub auto`.
+5. Refuse to bulk-read `_raw/` or decrypt `secure/*.enc`. Never solicit the master password in chat.
+6. `brain status`: if `ui_running=False` → tell the user to start Brain (`brain ui` / Brain.app / `brain autostart on`).
 
 ## If vault path missing
 
@@ -29,8 +30,9 @@ User may forget to save — treat write-back as **your** job to propose, not the
 
 1. Mid-session durable fact → `brain active --set "…"` (scratch note).
 2. Do **not** silently `brain add` / `brain remember` unless the user asked to write.
-3. When wrapping useful work → **always ask** (user’s language): save to Brain? Offer a ready draft: `brain add <slug> --tldr "…"` (TL;DR ≤5 lines) and/or one-line `brain remember`.
+3. When wrapping useful work → **always ask** (user’s language): save to Brain? Offer a ready draft: `brain add <slug> --tldr "…" [--hub auto]` (TL;DR ≤5 lines) and/or one-line `brain remember`.
 4. On yes → write; optional `brain recipe run after-session`. No large essays in the vault.
+5. After protocol/snippet changes: `brain agents install`.
 
 ## Security boundaries
 

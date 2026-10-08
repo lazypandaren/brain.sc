@@ -137,7 +137,10 @@ def test_graph_orphan_flag(cfgdir, tmp_path):
     assert howto["hub"] is False
 
 
-def test_version_0_4():
+def test_version_semver():
     from brain import __version__
 
-    assert __version__.startswith("0.4")
+    assert __version__.startswith("0.")
+    parts = __version__.split(".")
+    assert len(parts) >= 2
+    assert parts[0].isdigit() and parts[1].isdigit()

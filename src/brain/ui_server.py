@@ -208,6 +208,24 @@ class BrainHandler(BaseHTTPRequestHandler):
                     },
                 )
                 return
+            if path == "/api/hubs":
+                if not is_vault(self.root):
+                    self._json(400, {"error": "Vault root not set. Use Settings."})
+                    return
+                from brain.hubs import list_hubs
+
+                hubs = [
+                    {
+                        "id": h.id,
+                        "title": h.title,
+                        "tldr": h.tldr,
+                        "aliases": h.aliases,
+                        "projects": h.projects,
+                    }
+                    for h in list_hubs(self.root)
+                ]
+                self._json(200, {"hubs": hubs})
+                return
             if path.startswith("/api/card/"):
                 slug = urllib.parse.unquote(path[len("/api/card/") :])
                 card = read_card(self.root, slug)
@@ -460,6 +478,7 @@ class BrainHandler(BaseHTTPRequestHandler):
                     self._json(400, {"error": "Vault root not set. Use Settings."})
                     return
                 from brain.cards import Card, write_card
+                from brain.hubs import ensure_hub_link, suggest_hubs
                 from brain.importer import slugify
 
                 slug = str(body.get("id") or body.get("slug") or "").strip()
@@ -481,8 +500,65 @@ class BrainHandler(BaseHTTPRequestHandler):
                     self.root,
                     Card(id=slug, title=title, tags=tags or ["inbox"], body=body_md),
                 )
+                hub_id = None
+                hub_raw = str(body.get("hub") or "").strip()
+                suggestions = suggest_hubs(self.root, f"{title}\n{tldr}", limit=3)
+                if hub_raw:
+                    hub_id = hub_raw
+                    if hub_raw.lower() == "auto" and suggestions:
+                        hub_id = suggestions[0]["id"]
+                    if hub_id and hub_id.lower() != "auto":
+                        try:
+                            ensure_hub_link(self.root, slug, hub_id)
+                        except Exception as e:
+                            self._json(
+                                400,
+                                {"error": str(e), "id": slug, "hub_suggest": suggestions},
+                            )
+                            return
                 rebuild_index(self.root)
-                self._json(200, {"ok": True, "id": slug})
+                self._json(
+                    200,
+                    {
+                        "ok": True,
+                        "id": slug,
+                        "hub": hub_id,
+                        "hub_suggest": suggestions,
+                    },
+                )
+                return
+            if path == "/api/hubs":
+                if not is_vault(self.root):
+                    self._json(400, {"error": "Vault root not set. Use Settings."})
+                    return
+                from brain.hubs import create_hub
+
+                slug = str(body.get("id") or body.get("slug") or "").strip()
+                aliases_raw = body.get("aliases") or []
+                if isinstance(aliases_raw, str):
+                    aliases = [a.strip() for a in aliases_raw.split(",") if a.strip()]
+                else:
+                    aliases = [str(a).strip() for a in aliases_raw if str(a).strip()]
+                card = create_hub(
+                    self.root,
+                    slug,
+                    title=str(body.get("title") or "") or None,
+                    aliases=aliases,
+                    project=str(body.get("project") or "") or None,
+                    blurb=str(body.get("blurb") or "") or None,
+                )
+                rebuild_index(self.root)
+                self._json(200, {"ok": True, "id": card.id, "tldr": card.tldr})
+                return
+            if path == "/api/hubs/suggest":
+                if not is_vault(self.root):
+                    self._json(400, {"error": "Vault root not set. Use Settings."})
+                    return
+                from brain.hubs import suggest_hubs
+
+                text = str(body.get("text") or body.get("q") or "")
+                limit = int(body.get("limit") or 3)
+                self._json(200, {"suggestions": suggest_hubs(self.root, text, limit=limit)})
                 return
             if path == "/api/daily":
                 if not is_vault(self.root):

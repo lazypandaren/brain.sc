@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0
+
+### Added
+- **Hub onboarding:** `brain hub list|init|suggest`; hub template with `Aliases:` TL;DR; `brain add --hub auto|<slug>`; API `GET/POST /api/hubs`, `POST /api/hubs/suggest`
+- **Agent protocol sync:** hub ≠ degree contract in Cursor/Codex/Claude snippets; `brain agents install` refreshes them
+- **Sign/notarize script:** `scripts/macos/sign-and-notarize.sh` (skips cleanly without Apple credentials)
+- **CI:** `.github/workflows/test.yml` + `release.yml` (build `.pkg`, optional sign, attach to GitHub Release)
+- **Hot-patch:** version-agnostic `scripts/macos/hot-patch.sh`
+
+### Changed
+- Desktop Cocoa tray/lifecycle extracted to `desktop_cocoa.py` + `desktop_state.py` (review-friendly split)
+- PROTOCOL / AGENTS / CLAUDE document hub aliases + `--hub auto`
+
 ## 0.4.2
 
 ### Fixed

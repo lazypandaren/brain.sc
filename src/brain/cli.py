@@ -51,6 +51,30 @@ def main(argv: list[str] | None = None) -> int:
     p_add.add_argument("--tag", action="append", default=[])
     p_add.add_argument("--tldr", default="")
     p_add.add_argument("--secure", action="store_true")
+    p_add.add_argument(
+        "--hub",
+        default=None,
+        help="Link to hub slug after write (or 'auto' to suggest from title/tldr)",
+    )
+
+    p_hub = sub.add_parser("hub", help="Project hubs (tag hub) — list / init / suggest")
+    hub_sub = p_hub.add_subparsers(dest="hub_cmd", required=True)
+    hub_sub.add_parser("list", help="List cards with tag hub + aliases")
+    p_hub_init = hub_sub.add_parser("init", help="Create/refresh a project hub card")
+    p_hub_init.add_argument("slug")
+    p_hub_init.add_argument("--title", default="")
+    p_hub_init.add_argument(
+        "--aliases",
+        default="",
+        help="Comma-separated aliases for AI search (repo, product, ticket prefix)",
+    )
+    p_hub_init.add_argument("--project", default="")
+    p_hub_init.add_argument("--blurb", default="")
+    p_hub_suggest = hub_sub.add_parser(
+        "suggest", help="Suggest hub(s) for free text (write-back helper)"
+    )
+    p_hub_suggest.add_argument("text")
+    p_hub_suggest.add_argument("-n", "--limit", type=int, default=3)
 
     p_link = sub.add_parser("link", help="Link two cards")
     p_link.add_argument("a")
@@ -231,6 +255,8 @@ def dispatch(args: argparse.Namespace) -> int:
         root = _root(args)
         if args.secure and not is_unlocked():
             raise BrainError("Unlock first: brain unlock")
+        from brain.hubs import ensure_hub_link, suggest_hubs
+
         title = args.title or args.slug.replace("-", " ").title()
         tldr = args.tldr or title
         card = Card(
@@ -242,9 +268,68 @@ def dispatch(args: argparse.Namespace) -> int:
             updated=date.today().isoformat(),
         )
         path = write_card(root, card)
+        hub_arg = (getattr(args, "hub", None) or "").strip()
+        if hub_arg:
+            hub_id = hub_arg
+            if hub_arg.lower() == "auto":
+                hits = suggest_hubs(root, f"{title}\n{tldr}", limit=1)
+                if not hits:
+                    rebuild_index(root)
+                    print(f"wrote {path}")
+                    print("hub_suggest=(none)")
+                    return 0
+                hub_id = hits[0]["id"]
+                print(f"hub_suggest={hub_id} score={hits[0]['score']}")
+            ensure_hub_link(root, args.slug, hub_id)
+            print(f"linked → hub {hub_id}")
+        else:
+            hits = suggest_hubs(root, f"{title}\n{tldr}", limit=2)
+            if hits:
+                print(
+                    "hub_suggest: "
+                    + ", ".join(f"{h['id']}({h['score']})" for h in hits)
+                    + "  # use --hub auto|<slug>"
+                )
         rebuild_index(root)
         print(f"wrote {path}")
         return 0
+
+    if cmd == "hub":
+        from brain.hubs import create_hub, list_hubs, suggest_hubs
+
+        root = _root(args)
+        if args.hub_cmd == "list":
+            hubs = list_hubs(root)
+            if not hubs:
+                print("(no hub-tagged cards)")
+                return 0
+            for h in hubs:
+                aliases = ", ".join(h.aliases[:8])
+                print(f"{h.id}\t{h.title}\t{aliases}")
+            return 0
+        if args.hub_cmd == "init":
+            aliases = [a.strip() for a in (args.aliases or "").split(",") if a.strip()]
+            card = create_hub(
+                root,
+                args.slug,
+                title=args.title or None,
+                aliases=aliases,
+                project=args.project or None,
+                blurb=args.blurb or None,
+            )
+            rebuild_index(root)
+            print(f"hub={card.id}")
+            print(card.tldr)
+            return 0
+        if args.hub_cmd == "suggest":
+            hits = suggest_hubs(root, args.text, limit=int(args.limit or 3))
+            if not hits:
+                print("(no match)")
+                return 0
+            for h in hits:
+                print(f"{h['id']}\t{h['score']}\t{h['title']}")
+            return 0
+        raise BrainError(f"Unknown hub subcommand: {args.hub_cmd}")
 
     if cmd == "link":
         root = _root(args)
